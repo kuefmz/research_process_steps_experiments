@@ -12,7 +12,14 @@ from urllib.error import HTTPError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
-from .heuristics import CONTENT_EXTENSIONS, RESEARCH_PROCESS_STEPS, RULES
+from .heuristics import (
+    CONTENT_EXTENSIONS,
+    IMPLEMENTATION_COMPATIBLE_ARTIFACT_KINDS,
+    IMPLEMENTATION_GENERIC_RULES,
+    RESEARCH_PROCESS_STEPS,
+    RULES,
+    infer_artifact_kind,
+)
 
 
 DEFAULT_CONTENT_LIMIT = 250_000
@@ -99,8 +106,10 @@ def analyze_file(path: str, content: str = "") -> dict[str, Any]:
     prevents a single incidental word from assigning a research step.
     """
 
+    artifact_kind = infer_artifact_kind(path)
     scores = {step: 0 for step in RESEARCH_PROCESS_STEPS}
     evidence: list[dict[str, Any]] = []
+    suppressed_evidence: list[dict[str, Any]] = []
 
     for rule in RULES:
         haystack = path if rule.source == "path" else content
@@ -109,6 +118,24 @@ def analyze_file(path: str, content: str = "") -> dict[str, Any]:
 
         matches = _unique_matches(rule, haystack)
         if not matches:
+            continue
+
+        if (
+            rule.id in IMPLEMENTATION_GENERIC_RULES
+            and artifact_kind not in IMPLEMENTATION_COMPATIBLE_ARTIFACT_KINDS
+        ):
+            suppressed_evidence.append(
+                {
+                    "rule_id": rule.id,
+                    "step": rule.step,
+                    "source": rule.source,
+                    "artifact_kind": artifact_kind,
+                    "reason": (
+                        f"Suppressed because {artifact_kind!r} files are not "
+                        "compatible with this generic implementation rule."
+                    ),
+                }
+            )
             continue
 
         matched_texts = [match["text"] for match in matches]
@@ -131,10 +158,12 @@ def analyze_file(path: str, content: str = "") -> dict[str, Any]:
     ]
     return {
         "path": path,
+        "artifact_kind": artifact_kind,
         "steps": detected,
         "unclassified": not detected,
         "scores": {step: score for step, score in scores.items() if score},
         "evidence": evidence,
+        "suppressed_evidence": suppressed_evidence,
     }
 
 
