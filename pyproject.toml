@@ -21,7 +21,7 @@ research-process-steps-precache = "research_process_steps.api:precache_demo"
 where = ["src"]
 
 [tool.setuptools.package-data]
-research_process_steps = ["web/*.html"]
+research_process_steps = ["web/*.html", "demo_cache/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
