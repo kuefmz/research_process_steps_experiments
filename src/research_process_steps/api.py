@@ -44,8 +44,12 @@ CACHE_DIR = Path(
     )
 )
 DEMO_REPOSITORIES = {
-    "https://github.com/knowledgecaptureanddiscovery/somef",
-    "https://github.com/dgarijo/widoco",
+    "somef": "https://github.com/KnowledgeCaptureAndDiscovery/somef",
+    "widoco": "https://github.com/dgarijo/Widoco",
+}
+DEMO_REPOSITORY_URLS = {
+    _url.rstrip("/").removesuffix(".git").lower()
+    for _url in DEMO_REPOSITORIES.values()
 }
 
 
@@ -56,7 +60,7 @@ def _normalize_repo_url(repo_url: str) -> str:
 def _demo_cache_path(request: AnalyzeRequest) -> Path | None:
     normalized = _normalize_repo_url(request.repo_url)
     if (
-        normalized not in DEMO_REPOSITORIES
+        normalized not in DEMO_REPOSITORY_URLS
         or request.ref is not None
         or request.max_content_bytes != DEFAULT_CONTENT_LIMIT
     ):
@@ -156,3 +160,20 @@ def run() -> None:
         port=8000,
         reload=False,
     )
+
+
+def precache_demo() -> None:
+    """Populate persistent caches for the repositories used in demonstrations."""
+    for name, repo_url in DEMO_REPOSITORIES.items():
+        request = AnalyzeRequest(repo_url=repo_url)
+        cache_path = _demo_cache_path(request)
+        if cache_path is not None and cache_path.exists():
+            print(f"{name}: already cached at {cache_path}")
+            continue
+
+        print(f"{name}: analyzing {repo_url} ...")
+        result = analyze(request)
+        if result.get("cache", {}).get("persistent"):
+            print(f"{name}: cached at {result['cache']['path']}")
+        else:
+            print(f"{name}: analysis completed")
