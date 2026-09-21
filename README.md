@@ -126,3 +126,79 @@ pytest
 ```
 
 The initial tests cover all six process steps, multi-label behavior, unclassified files, and the distinction between scientific evaluation and software unit tests.
+
+
+## Experiment web interface and API
+
+A small FastAPI application is included for interactive experimentation.
+
+Install the project and start the interface:
+
+```bash
+python -m pip install -e .
+research-process-steps-web
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000
+```
+
+The interface lets you paste a GitHub repository URL and inspect every file. For each file it shows:
+
+- detected research process step(s);
+- heuristic score per step;
+- the exact rule(s) that fired;
+- why each rule maps to that research process step;
+- the exact matched keyword/text found in the path or file contents;
+- files for which no heuristic produced enough evidence.
+
+Results can be filtered by research process step or searched by path, rule, or matched term.
+
+### API
+
+The same functionality is available as an HTTP endpoint:
+
+```http
+POST /api/analyze
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "repo_url": "https://github.com/KnowledgeCaptureAndDiscovery/somef"
+}
+```
+
+Optional fields are `ref` and `max_content_bytes`.
+
+A file-level response contains evidence such as:
+
+```json
+{
+  "path": "experiments/evaluate_model.py",
+  "steps": ["experimentation", "evaluation"],
+  "scores": {
+    "experimentation": 3,
+    "evaluation": 3
+  },
+  "evidence": [
+    {
+      "rule_id": "EXP_PATH_EXPERIMENT_DIR",
+      "step": "experimentation",
+      "source": "path",
+      "weight": 3,
+      "matched_text": "experiments/",
+      "matched_texts": ["experiments/"],
+      "description": "File belongs to an explicitly named experimental directory."
+    }
+  ]
+}
+```
+
+FastAPI's automatically generated API documentation is available at `/docs`.
+
+For larger experiments, set a `GITHUB_TOKEN` environment variable before starting the server to increase the GitHub API rate limit. The token is read only by the backend and is never sent to the browser.
