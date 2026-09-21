@@ -89,6 +89,9 @@
     }
     td { font-size: 13px; }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-word; }
+    .path a, .match-link { color: #245ea6; text-decoration: none; }
+    .path a:hover, .match-link:hover { text-decoration: underline; }
+    .cache-badge { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: #e8f4ec; color: #28613b; font-size: 11px; font-weight: 650; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; }
     .chip {
       display: inline-block;
@@ -138,7 +141,7 @@
         Example:
         <button data-url="https://github.com/KnowledgeCaptureAndDiscovery/somef">SoMEF</button>
         ·
-        <button data-url="https://github.com/paperswithcode/paperswithcode-data">Papers with Code data</button>
+        <button data-url="https://github.com/dgarijo/Widoco">WIDOCO</button>
       </div>
       <div id="status" class="status"></div>
     </section>
@@ -214,7 +217,7 @@
       return [
         file.path,
         ...file.steps,
-        ...file.evidence.flatMap(e => [e.rule_id, ...(e.matched_texts || [e.matched_text]), e.description, e.step])
+        ...file.evidence.flatMap(e => [e.rule_id, ...(e.matches || []).map(m => m.text), ...(e.matched_texts || [e.matched_text]), e.description, e.step])
       ].join(" ").toLowerCase();
     }
 
@@ -241,25 +244,40 @@
         const evidence = file.evidence.length
           ? `<details><summary>${file.evidence.length} matched rule${file.evidence.length === 1 ? "" : "s"}</summary>
                <div class="evidence">
-                 ${file.evidence.map(e => `
+                 ${file.evidence.map(e => {
+                   const matches = e.matches && e.matches.length
+                     ? e.matches
+                     : (e.matched_texts || [e.matched_text]).map(text => ({ text, line: null, url: file.file_url }));
+                   return `
                    <div class="evidence-item">
                      <strong>${escapeHtml(e.step)}</strong> — ${escapeHtml(e.description)}<br>
-                     ${(e.matched_texts || [e.matched_text]).map(match => `<span class="match">${escapeHtml(match)}</span>`).join(" ")}
+                     ${matches.map(match => {
+                       const label = match.line ? `${match.text} · line ${match.line}` : match.text;
+                       return match.url
+                         ? `<a class="match-link" href="${escapeHtml(match.url)}" target="_blank" rel="noopener"><span class="match">${escapeHtml(label)}</span></a>`
+                         : `<span class="match">${escapeHtml(label)}</span>`;
+                     }).join(" ")}
                      <div class="meta">${escapeHtml(e.rule_id)} · source: ${escapeHtml(e.source)} · weight: ${e.weight}</div>
-                   </div>`).join("")}
+                   </div>`;
+                 }).join("")}
                </div>
              </details>`
           : '<span class="none">No heuristic matched</span>';
 
+        const fileCell = file.file_url
+          ? `<a href="${escapeHtml(file.file_url)}" target="_blank" rel="noopener">${escapeHtml(file.path)}</a>`
+          : escapeHtml(file.path);
+
         return `<tr>
-          <td class="path">${escapeHtml(file.path)}</td>
+          <td class="path">${fileCell}</td>
           <td>${chips}</td>
           <td>${scores}</td>
           <td>${evidence}</td>
         </tr>`;
       }).join("");
 
-      status.textContent = `Showing ${filtered.length} of ${data.files.length} files from ${data.repository.full_name} @ ${data.repository.ref}`;
+      const cacheBadge = data.cache?.hit ? '<span class="cache-badge">cached result</span>' : "";
+      status.innerHTML = `Showing ${filtered.length} of ${data.files.length} files from ${escapeHtml(data.repository.full_name)} @ ${escapeHtml(data.repository.ref)} ${cacheBadge}`;
     }
 
     async function analyze() {
