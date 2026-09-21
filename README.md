@@ -217,3 +217,65 @@ research-process-steps-precache
 After this command completes, selecting SoMEF or WIDOCO in the interface uses the cached JSON instead of scanning GitHub again. The interface displays a **cached result** badge when a cached response is used.
 
 Repository file names in the result table link directly to the corresponding GitHub file. Content-based heuristic matches also include their exact line number and link directly to that line on GitHub, making it easier to manually check whether an assignment is correct. Path-based heuristics link to the file because they do not originate from a particular source-code line.
+
+
+## Persistent random corpus experiments
+
+Repository analyses are now **write-once by repository URL**. Before any manual or batch execution, the application checks the persistent result store. If that repository already has a result, the stored JSON is returned and GitHub is not scanned again.
+
+By default, results are written under:
+
+```text
+data/heuristic_results/
+```
+
+Each repository gets:
+
+- a complete JSON result containing every file and heuristic evidence;
+- a lightweight `.meta.json` record used by the frontend history table.
+
+The directory is intentionally gitignored because complete per-file results can become large. Set `RPS_RESULTS_DIR` to place the persistent store elsewhere.
+
+### Run 100 random repositories from the command line
+
+The repository-level OpenAIRE corpus at `data/openaire_zenodo_12819872/github_repositories.csv` is the default sampling population.
+
+After installing the project:
+
+```bash
+research-process-steps-random
+```
+
+The default is 100 repositories. Explicit supported sizes are:
+
+```bash
+research-process-steps-random 10
+research-process-steps-random 20
+research-process-steps-random 25
+research-process-steps-random 50
+research-process-steps-random 100
+```
+
+Sampling is performed only from repositories that do **not** already have a stored result. Every successful repository is saved immediately before the next repository is started, so completed work is retained even if a later repository fails.
+
+### Frontend batch execution and history
+
+The web interface includes buttons for **10, 20, 25, 50, and 100** random unseen repositories. It also shows an **Executed repositories** table containing every locally stored repository. Select **View output** to reopen the complete file-level result without rerunning the repository.
+
+The corresponding API endpoints are:
+
+```text
+GET  /api/executed
+GET  /api/executed/{execution_id}
+POST /api/random
+```
+
+Example random request:
+
+```json
+{
+  "count": 100
+}
+```
+
+The single-repository `POST /api/analyze` endpoint uses the same permanent result store, so a repository analyzed manually cannot later be selected by a random batch and vice versa.
