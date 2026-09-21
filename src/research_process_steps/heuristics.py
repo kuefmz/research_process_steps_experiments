@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Pattern
 
 
@@ -19,6 +20,66 @@ RESEARCH_PROCESS_STEPS = (
     "evaluation",
     "dissemination",
 )
+
+
+# File-type information is used as a compatibility constraint on broad path
+# heuristics. It is not itself a research-process-step prediction.
+DATA_EXTENSIONS = {
+    ".ttl", ".rdf", ".owl", ".nt", ".nq", ".trig",
+    ".csv", ".tsv", ".jsonl", ".ndjson",
+    ".parquet", ".feather", ".arrow",
+    ".h5", ".hdf5", ".npy", ".npz", ".arff",
+}
+SOURCE_CODE_EXTENSIONS = {
+    ".py", ".r", ".jl", ".js", ".ts", ".java", ".go", ".rs",
+    ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".sh", ".bash",
+    ".scala", ".kt", ".m", ".swift", ".php", ".rb", ".pl",
+}
+NOTEBOOK_EXTENSIONS = {".ipynb", ".rmd", ".qmd"}
+DOCUMENTATION_EXTENSIONS = {".md", ".rst", ".adoc"}
+CONFIGURATION_EXTENSIONS = {".yaml", ".yml", ".toml", ".ini", ".cfg"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".tif", ".tiff"}
+ARCHIVE_EXTENSIONS = {".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z"}
+
+IMPLEMENTATION_GENERIC_RULES = {
+    "IMP_PATH_SOURCE_DIR",
+    "IMP_PATH_TESTS",
+}
+IMPLEMENTATION_COMPATIBLE_ARTIFACT_KINDS = {
+    "source_code",
+    "notebook",
+}
+
+
+def infer_artifact_kind(path: str) -> str:
+    """Infer a coarse, deterministic file kind from name and extension."""
+    file_path = Path(path)
+    name = file_path.name.lower()
+    suffix = file_path.suffix.lower()
+
+    if suffix in DATA_EXTENSIONS:
+        return "data"
+    if suffix in SOURCE_CODE_EXTENSIONS:
+        return "source_code"
+    if suffix in NOTEBOOK_EXTENSIONS:
+        return "notebook"
+    if suffix in DOCUMENTATION_EXTENSIONS:
+        return "documentation"
+    if suffix in IMAGE_EXTENSIONS:
+        return "image"
+    if suffix in ARCHIVE_EXTENSIONS:
+        return "archive"
+
+    if name in {
+        "dockerfile", "makefile", "pyproject.toml", "setup.cfg", "setup.py",
+        "package.json", "cargo.toml", "go.mod", "pom.xml", "build.gradle",
+        "citation.cff", "codemeta.json",
+    }:
+        return "configuration"
+    if suffix in CONFIGURATION_EXTENSIONS:
+        return "configuration"
+
+    return "other"
 
 
 @dataclass(frozen=True)
@@ -139,5 +200,6 @@ RULES = (
 CONTENT_EXTENSIONS = {
     ".py", ".r", ".sh", ".bash", ".ipynb", ".jl", ".md", ".rst", ".txt",
     ".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".csv", ".tsv",
+    ".jsonl", ".ndjson", ".ttl", ".rdf", ".owl", ".nt", ".nq", ".trig",
     ".js", ".ts", ".java", ".go", ".rs", ".cpp", ".c", ".h",
 }
