@@ -68,3 +68,15 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
 @app.get("/", include_in_schema=False)
 def interface() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
+
+
+def run() -> None:
+    """Run the local experimentation web interface."""
+    import uvicorn
+
+    uvicorn.run(
+        "research_process_steps.api:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=False,
+    )
