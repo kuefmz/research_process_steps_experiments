@@ -15,6 +15,7 @@ dependencies = [
 [project.scripts]
 research-process-steps = "research_process_steps.analyzer:main"
 research-process-steps-web = "research_process_steps.api:run"
+research-process-steps-precache = "research_process_steps.api:precache_demo"
 
 [tool.setuptools.packages.find]
 where = ["src"]
