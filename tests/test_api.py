@@ -37,7 +37,8 @@ def test_analyze_endpoint_function_forwards_repository(monkeypatch):
 
 
 def test_demo_cache_is_persistent(tmp_path, monkeypatch):
-    monkeypatch.setattr(api, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(api, "CACHE_DIR", tmp_path / "runtime")
+    monkeypatch.setattr(api, "BUNDLED_CACHE_DIR", tmp_path / "bundled")
     calls = {"count": 0}
 
     def fake_analyze(repo_url, *, token=None, ref=None, max_content_bytes=None):
