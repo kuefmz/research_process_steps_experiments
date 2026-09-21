@@ -202,3 +202,18 @@ A file-level response contains evidence such as:
 FastAPI's automatically generated API documentation is available at `/docs`.
 
 For larger experiments, set a `GITHUB_TOKEN` environment variable before starting the server to increase the GitHub API rate limit. The token is read only by the backend and is never sent to the browser.
+
+
+### Demo preparation
+
+SoMEF and WIDOCO are configured as persistent demo examples. Their results are stored under the local cache directory and reused across server restarts.
+
+Before a presentation, populate both caches once:
+
+```bash
+research-process-steps-precache
+```
+
+After this command completes, selecting SoMEF or WIDOCO in the interface uses the cached JSON instead of scanning GitHub again. The interface displays a **cached result** badge when a cached response is used.
+
+Repository file names in the result table link directly to the corresponding GitHub file. Content-based heuristic matches also include their exact line number and link directly to that line on GitHub, making it easier to manually check whether an assignment is correct. Path-based heuristics link to the file because they do not originate from a particular source-code line.
