@@ -1,0 +1,7 @@
+# Local raw source archives (large, reproducible downloads)
+data/raw/*
+!data/raw/.gitkeep
+
+# Persistent heuristic execution outputs can be very large.
+# They are reproducible local experiment artifacts and should not bloat Git.
+data/heuristic_results/

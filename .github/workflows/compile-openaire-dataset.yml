@@ -1,0 +1,46 @@
+name: compile OpenAIRE GitHub software dataset
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/compile-openaire-dataset.yml"
+      - "scripts/compile_openaire_github_dataset.py"
+
+permissions:
+  contents: write
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Download Zenodo software.tar
+        run: |
+          curl -L --fail --retry 3             "https://zenodo.org/records/12819872/files/software.tar?download=1"             -o /tmp/software.tar
+      - name: Compile GitHub software CSVs
+        run: |
+          python scripts/compile_openaire_github_dataset.py             /tmp/software.tar             --output-dir data/openaire_zenodo_12819872
+      - name: Show outputs
+        run: |
+          ls -lh data/openaire_zenodo_12819872
+          cat data/openaire_zenodo_12819872/summary.json
+      - name: Commit compiled dataset
+        run: |
+          if [ -z "$(git status --porcelain -- data/openaire_zenodo_12819872)" ]; then
+            echo "Dataset files already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data/openaire_zenodo_12819872
+          git commit -m "Compile shared OpenAIRE GitHub software dataset"
+          git pull --rebase origin dev
+          git push origin HEAD:dev
