@@ -73,8 +73,8 @@ def _content_is_scannable(path: str) -> bool:
     return Path(name).suffix.lower() in CONTENT_EXTENSIONS
 
 
-def _unique_matches(rule, haystack: str) -> list[str]:
-    values: list[str] = []
+def _unique_matches(rule, haystack: str) -> list[dict[str, Any]]:
+    values: list[dict[str, Any]] = []
     seen: set[str] = set()
     for match in rule.pattern.finditer(haystack):
         value = match.group(0)[:160]
@@ -82,7 +82,10 @@ def _unique_matches(rule, haystack: str) -> list[str]:
         if key in seen:
             continue
         seen.add(key)
-        values.append(value)
+        line = None
+        if rule.source == "content":
+            line = haystack.count("\n", 0, match.start()) + 1
+        values.append({"text": value, "line": line})
         if len(values) >= MAX_MATCHES_PER_RULE:
             break
     return values
@@ -104,10 +107,11 @@ def analyze_file(path: str, content: str = "") -> dict[str, Any]:
         if not haystack:
             continue
 
-        matched_texts = _unique_matches(rule, haystack)
-        if not matched_texts:
+        matches = _unique_matches(rule, haystack)
+        if not matches:
             continue
 
+        matched_texts = [match["text"] for match in matches]
         scores[rule.step] += rule.weight
         evidence.append(
             {
@@ -117,6 +121,7 @@ def analyze_file(path: str, content: str = "") -> dict[str, Any]:
                 "weight": rule.weight,
                 "matched_text": matched_texts[0],
                 "matched_texts": matched_texts,
+                "matches": matches,
                 "description": rule.description,
             }
         )
@@ -197,11 +202,22 @@ def analyze_github_repository(
         file_content, content_scanned = content_by_path[path]
 
         result = analyze_file(path, file_content)
+        encoded_web_path = quote(path, safe="/")
+        file_url = (
+            f"https://github.com/{quote(owner)}/{quote(repo)}/blob/"
+            f"{quote(chosen_ref, safe='')}/{encoded_web_path}"
+        )
+        for evidence_item in result["evidence"]:
+            for match in evidence_item.get("matches", []):
+                line = match.get("line")
+                match["url"] = f"{file_url}#L{line}" if line else file_url
+
         result.update(
             {
                 "size_bytes": size,
                 "content_scanned": content_scanned,
                 "blob_sha": item.get("sha"),
+                "file_url": file_url,
             }
         )
         output_files.append(result)
