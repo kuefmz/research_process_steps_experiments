@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
+DEFAULT_SOURCE_TAR = Path("data/raw/software.tar")
 DEFAULT_OUTPUT_DIR = Path("data/openaire_zenodo_12819872")
 COMPILER_VERSION = "1.1.0"
 
@@ -440,10 +441,8 @@ def compile_dataset(source_tar: Path, output_dir: Path) -> dict[str, Any]:
             ),
         },
         "reproduce": {
-            "command": (
-                "python scripts/compile_openaire_github_dataset.py "
-                "/path/to/software.tar"
-            ),
+            "command": "python scripts/compile_openaire_github_dataset.py",
+            "default_input": str(DEFAULT_SOURCE_TAR),
             "script": "scripts/compile_openaire_github_dataset.py",
         },
     }
@@ -471,9 +470,10 @@ def main() -> None:
         )
     )
     parser.add_argument(
-        "software_tar",
+        "--software-tar",
         type=Path,
-        help="Path to the downloaded Zenodo software.tar file.",
+        default=DEFAULT_SOURCE_TAR,
+        help=f"Input archive (default: {DEFAULT_SOURCE_TAR}).",
     )
     parser.add_argument(
         "--output-dir",
@@ -484,7 +484,11 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.software_tar.is_file():
-        raise SystemExit(f"software.tar not found: {args.software_tar}")
+        raise SystemExit(
+            f"software.tar not found: {args.software_tar}\n"
+            f"Place the downloaded archive at {DEFAULT_SOURCE_TAR} "
+            "or override it with --software-tar."
+        )
 
     compile_dataset(args.software_tar, args.output_dir)
 
