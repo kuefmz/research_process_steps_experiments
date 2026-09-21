@@ -279,3 +279,91 @@ Example random request:
 ```
 
 The single-repository `POST /api/analyze` endpoint uses the same permanent result store, so a repository analyzed manually cannot later be selected by a random batch and vice versa.
+
+
+## GitHub API authentication and rate limits
+
+The analyzer reads repository metadata and recursive Git trees from the GitHub REST API. Without authentication, GitHub allows only **60 REST API requests per hour per originating IP address**. For larger experiments, use a personal access token; authenticated requests generally receive **5,000 requests per hour**. GitHub also applies secondary rate limits, so authentication increases the primary allowance but does not make requests unlimited.
+
+### Recommended: fine-grained personal access token
+
+GitHub recommends fine-grained personal access tokens over classic tokens.
+
+1. On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens**.
+2. Create a new token, for example named `research-process-steps-local`.
+3. Choose an expiration date.
+4. For this project, which analyzes public repositories only, keep access minimal. Fine-grained tokens already include read-only access to public repositories. If you later analyze private repositories, grant only the required repository access and read permissions.
+5. Generate the token and copy it immediately.
+
+Never commit the token to this repository, paste it into source code, or put it into an unignored file.
+
+### Linux / macOS
+
+Set the token in the shell before starting either the web interface or batch runner:
+
+```bash
+export GITHUB_TOKEN="github_pat_YOUR_TOKEN_HERE"
+```
+
+Verify that the variable exists without printing the secret:
+
+```bash
+test -n "$GITHUB_TOKEN" && echo "GITHUB_TOKEN is set"
+```
+
+Then start the application in the **same terminal**:
+
+```bash
+research-process-steps-web
+```
+
+or run a batch:
+
+```bash
+research-process-steps-random 100
+```
+
+The web interface and random batch runner both read `GITHUB_TOKEN` automatically.
+
+### Windows PowerShell
+
+For the current PowerShell session:
+
+```powershell
+$env:GITHUB_TOKEN = "github_pat_YOUR_TOKEN_HERE"
+```
+
+Then run:
+
+```powershell
+research-process-steps-web
+```
+
+or:
+
+```powershell
+research-process-steps-random 100
+```
+
+### Check the current GitHub rate limit
+
+With the token set:
+
+```bash
+curl -s \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  https://api.github.com/rate_limit
+```
+
+Look at `resources.core.limit`, `resources.core.remaining`, and `resources.core.reset`.
+
+### If you still get "API rate limit exceeded"
+
+- Confirm that `GITHUB_TOKEN` is set in the **same shell that launched the server or batch process**.
+- Restart `research-process-steps-web` after exporting the token; an already-running server will not inherit environment variables added later.
+- Check the authenticated rate-limit endpoint with the `curl` command above.
+- If `remaining` is `0`, wait until the reported reset time before retrying.
+- A `403` or `429` can also indicate a secondary rate limit. In that case, slow down requests and respect GitHub's `retry-after` header when present.
+
+The token is read only by the Python backend and is not sent to the browser.
