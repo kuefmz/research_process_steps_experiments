@@ -7,6 +7,7 @@ on:
       - ".github/workflows/precompute-demo.yml"
       - "scripts/precompute_demo_results.py"
       - "src/research_process_steps/analyzer.py"
+      - "src/research_process_steps/heuristics.py"
 
 permissions:
   contents: write
