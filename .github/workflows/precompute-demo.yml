@@ -27,7 +27,7 @@ jobs:
         run: python scripts/precompute_demo_results.py
       - name: Commit generated JSON
         run: |
-          if git diff --quiet -- src/research_process_steps/demo_cache; then
+          if [ -z "$(git status --porcelain -- src/research_process_steps/demo_cache)" ]; then
             echo "Demo result files already up to date."
             exit 0
           fi
