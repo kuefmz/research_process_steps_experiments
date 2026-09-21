@@ -117,6 +117,10 @@
       word-break: break-word;
     }
     .meta { color: #737e8a; font-size: 11px; }
+    .file-details { margin-top: 7px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .file-details-grid { display: grid; grid-template-columns: 110px 1fr; gap: 3px 10px; margin-top: 6px; }
+    .file-details-grid dt { color: #737e8a; }
+    .file-details-grid dd { margin: 0; word-break: break-word; }
     @media (max-width: 850px) {
       .form-row, .controls { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, 1fr); }
@@ -268,8 +272,26 @@
           ? `<a href="${escapeHtml(file.file_url)}" target="_blank" rel="noopener">${escapeHtml(file.path)}</a>`
           : escapeHtml(file.path);
 
+        const inferredName = file.file_name || file.path.split("/").pop();
+        const inferredDirectory = file.directory ?? file.path.split("/").slice(0, -1).join("/");
+        const inferredExtension = file.extension || (inferredName.includes(".") ? "." + inferredName.split(".").pop() : "");
+        const fileDetails = `
+          <details class="file-details">
+            <summary>File details</summary>
+            <dl class="file-details-grid">
+              <dt>Name</dt><dd>${escapeHtml(inferredName)}</dd>
+              <dt>Directory</dt><dd>${escapeHtml(inferredDirectory || "(repository root)")}</dd>
+              <dt>Type</dt><dd>${escapeHtml(inferredExtension || "(no extension)")}</dd>
+              <dt>Size</dt><dd>${Number(file.size_bytes || 0).toLocaleString()} bytes</dd>
+              <dt>Content scanned</dt><dd>${file.content_scanned ? "yes" : "no"}</dd>
+              <dt>Ref</dt><dd>${escapeHtml(file.ref || data.repository.ref)}</dd>
+              <dt>Blob SHA</dt><dd>${escapeHtml(file.blob_sha || "—")}</dd>
+              <dt>GitHub</dt><dd>${file.file_url ? `<a href="${escapeHtml(file.file_url)}" target="_blank" rel="noopener">Open file</a>` : "—"}</dd>
+            </dl>
+          </details>`;
+
         return `<tr>
-          <td class="path">${fileCell}</td>
+          <td class="path">${fileCell}${fileDetails}</td>
           <td>${chips}</td>
           <td>${scores}</td>
           <td>${evidence}</td>
