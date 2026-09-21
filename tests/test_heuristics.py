@@ -67,3 +67,8 @@ def test_preserves_multiple_unique_content_matches():
         "recall",
         "f1_score",
     ]
+    assert metric_evidence["matches"] == [
+        {"text": "precision", "line": 1},
+        {"text": "recall", "line": 2},
+        {"text": "f1_score", "line": 4},
+    ]
