@@ -1,14 +1,13 @@
-"""Compile the OpenAIRE software dump into a GitHub-repository dataset.
+"""Compile the local OpenAIRE software.tar into reusable GitHub CSV datasets.
 
-Source:
+Source archive:
 https://zenodo.org/records/12819872/files/software.tar?download=1
 
-The OpenAIRE Software schema defines codeRepositoryUrl as the source-code
-repository URL. This script keeps records whose codeRepositoryUrl identifies a
-GitHub repository, normalizes the URL to https://github.com/OWNER/REPO, and
-creates both record-level and deduplicated repository-level outputs.
+The compiler uses the OpenAIRE software field codeRepositoryUrl and keeps only
+records whose source-code repository can be normalized to a GitHub repository.
 
-No AI or fuzzy URL inference is used.
+Outputs are DATA ONLY. Manual annotations and validation samples must be created
+separately so the same compiled dataset can be shared with other experiments.
 """
 
 from __future__ import annotations
@@ -18,23 +17,14 @@ import csv
 import gzip
 import io
 import json
-import random
 import re
-import shutil
 import tarfile
-import tempfile
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-DEFAULT_SOURCE_URL = (
-    "https://zenodo.org/records/12819872/files/software.tar?download=1"
-)
 DEFAULT_OUTPUT_DIR = Path("data/openaire_zenodo_12819872")
-DEFAULT_SAMPLE_SIZE = 100
-DEFAULT_SAMPLE_SEED = 42
 
 GITHUB_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 GITHUB_RESERVED_ROOTS = {
@@ -44,6 +34,30 @@ GITHUB_RESERVED_ROOTS = {
     "search", "security", "settings", "site", "sponsors", "topics", "trending",
     "users",
 }
+
+RECORD_FIELDS = [
+    "openaire_id",
+    "type",
+    "main_title",
+    "sub_title",
+    "publication_date",
+    "publisher",
+    "version",
+    "programming_language",
+    "authors",
+    "pids",
+    "code_repository_url_original",
+    "github_repository_url",
+]
+
+REPOSITORY_FIELDS = [
+    "github_repository_url",
+    "record_count",
+    "representative_title",
+    "openaire_ids",
+    "programming_languages",
+    "publication_dates",
+]
 
 
 def _iter_values(value: Any) -> Iterable[str]:
@@ -56,12 +70,7 @@ def _iter_values(value: Any) -> Iterable[str]:
 
 
 def normalize_github_repo_url(value: str) -> str | None:
-    """Normalize a GitHub URL to https://github.com/OWNER/REPO.
-
-    Supports normal HTTP(S), git://, ssh://git@github.com/... and scp-like
-    git@github.com:OWNER/REPO.git forms. Deep links such as /blob/, /tree/,
-    /issues/, etc. are reduced to the repository root.
-    """
+    """Normalize a GitHub reference to https://github.com/OWNER/REPO."""
     if not value:
         return None
 
@@ -69,19 +78,17 @@ def normalize_github_repo_url(value: str) -> str | None:
     if not raw:
         return None
 
-    # scp-like Git SSH syntax
     if raw.lower().startswith("git@github.com:"):
         path = raw.split(":", 1)[1]
-        parts = [p for p in path.split("/") if p]
+        parts = [part for part in path.split("/") if part]
     else:
-        # Some metadata use git+https://...
         if raw.lower().startswith("git+"):
             raw = raw[4:]
         parsed = urlparse(raw)
         host = (parsed.hostname or "").lower()
         if host not in {"github.com", "www.github.com"}:
             return None
-        parts = [p for p in parsed.path.split("/") if p]
+        parts = [part for part in parsed.path.split("/") if part]
 
     if len(parts) < 2:
         return None
@@ -103,12 +110,12 @@ def normalize_github_repo_url(value: str) -> str | None:
     return f"https://github.com/{owner}/{repository}"
 
 
-def _authors(record: dict[str, Any]) -> list[str]:
+def _authors(record: dict[str, Any]) -> str:
     values = record.get("authors")
     if values is None:
         values = record.get("author")
 
-    result: list[str] = []
+    names: list[str] = []
     if isinstance(values, list):
         for author in values:
             if not isinstance(author, dict):
@@ -123,14 +130,15 @@ def _authors(record: dict[str, Any]) -> list[str]:
                 )
             )
             if name:
-                result.append(str(name).strip())
-    return result
+                names.append(str(name).strip())
+    return " | ".join(names)
 
 
-def _pids(record: dict[str, Any]) -> list[str]:
+def _pids(record: dict[str, Any]) -> str:
     values = record.get("pids")
     if values is None:
         values = record.get("pid")
+
     result: list[str] = []
     if isinstance(values, list):
         for pid in values:
@@ -140,27 +148,28 @@ def _pids(record: dict[str, Any]) -> list[str]:
             value = pid.get("value")
             if value:
                 result.append(f"{scheme}:{value}" if scheme else str(value))
-    return result
+    return " | ".join(result)
 
 
 def compact_record(
     record: dict[str, Any],
     original_repo_url: str,
     github_repo_url: str,
-) -> dict[str, Any]:
-    """Keep metadata useful for sampling, auditing and later analysis."""
+) -> dict[str, str]:
     return {
-        "openaire_id": record.get("id"),
-        "type": record.get("type"),
-        "main_title": record.get("mainTitle") or record.get("maintitle"),
-        "sub_title": record.get("subTitle") or record.get("subtitle"),
-        "publication_date": (
-            record.get("publicationDate") or record.get("publicationdate")
+        "openaire_id": str(record.get("id") or ""),
+        "type": str(record.get("type") or ""),
+        "main_title": str(record.get("mainTitle") or record.get("maintitle") or ""),
+        "sub_title": str(record.get("subTitle") or record.get("subtitle") or ""),
+        "publication_date": str(
+            record.get("publicationDate") or record.get("publicationdate") or ""
         ),
-        "publisher": record.get("publisher"),
-        "version": record.get("version"),
-        "programming_language": (
-            record.get("programmingLanguage") or record.get("programminglanguage")
+        "publisher": str(record.get("publisher") or ""),
+        "version": str(record.get("version") or ""),
+        "programming_language": str(
+            record.get("programmingLanguage")
+            or record.get("programminglanguage")
+            or ""
         ),
         "authors": _authors(record),
         "pids": _pids(record),
@@ -169,23 +178,8 @@ def compact_record(
     }
 
 
-def download_source(url: str, destination: Path) -> None:
-    print(f"Downloading {url}", flush=True)
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "research-process-steps-dataset-builder/0.1"},
-    )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        with destination.open("wb") as output:
-            shutil.copyfileobj(response, output, length=1024 * 1024)
-    print(
-        f"Downloaded {destination.stat().st_size:,} bytes to {destination}",
-        flush=True,
-    )
-
-
 def iter_software_records(tar_path: Path) -> Iterable[dict[str, Any]]:
-    """Stream JSON-lines records from gz members inside software.tar."""
+    """Stream records from JSON-lines members of the OpenAIRE tar archive."""
     with tarfile.open(tar_path, mode="r:*") as archive:
         for member in archive:
             if not member.isfile():
@@ -196,10 +190,11 @@ def iter_software_records(tar_path: Path) -> Iterable[dict[str, Any]]:
                 continue
 
             print(f"Reading {member.name}", flush=True)
-            if member.name.lower().endswith(".gz"):
-                stream = gzip.GzipFile(fileobj=extracted)
-            else:
-                stream = extracted
+            stream = (
+                gzip.GzipFile(fileobj=extracted)
+                if member.name.lower().endswith(".gz")
+                else extracted
+            )
 
             with io.TextIOWrapper(stream, encoding="utf-8", errors="replace") as text:
                 for line_number, line in enumerate(text, start=1):
@@ -217,7 +212,7 @@ def iter_software_records(tar_path: Path) -> Iterable[dict[str, Any]]:
 
 
 def github_urls_from_record(record: dict[str, Any]) -> list[tuple[str, str]]:
-    """Return (original, normalized) pairs from codeRepositoryUrl only."""
+    """Return unique (original URL, normalized GitHub URL) pairs."""
     value = record.get("codeRepositoryUrl")
     if value is None:
         value = record.get("coderepositoryurl")
@@ -232,27 +227,26 @@ def github_urls_from_record(record: dict[str, Any]) -> list[tuple[str, str]]:
     return result
 
 
-def write_outputs(
-    source_tar: Path,
-    output_dir: Path,
-    sample_size: int,
-    sample_seed: int,
-) -> dict[str, Any]:
+def compile_dataset(source_tar: Path, output_dir: Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    records_path = output_dir / "github_software_records.jsonl"
+
+    records_path = output_dir / "github_software_records.csv"
     repositories_path = output_dir / "github_repositories.csv"
-    sample_path = output_dir / f"validation_sample_{sample_size}.csv"
     summary_path = output_dir / "summary.json"
 
     total_records = 0
     records_with_code_repo = 0
-    github_records = 0
-    invalid_or_non_github_code_repo = 0
-    repository_records: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    github_record_links = 0
+    non_github_or_invalid = 0
+    repository_records: dict[str, list[dict[str, str]]] = defaultdict(list)
 
-    with records_path.open("w", encoding="utf-8") as records_out:
+    with records_path.open("w", encoding="utf-8", newline="") as output:
+        record_writer = csv.DictWriter(output, fieldnames=RECORD_FIELDS)
+        record_writer.writeheader()
+
         for record in iter_software_records(source_tar):
             total_records += 1
+
             raw_code_repo = (
                 record.get("codeRepositoryUrl")
                 if "codeRepositoryUrl" in record
@@ -264,24 +258,22 @@ def write_outputs(
 
             github_pairs = github_urls_from_record(record)
             if raw_values and not github_pairs:
-                invalid_or_non_github_code_repo += 1
+                non_github_or_invalid += 1
 
             for original_url, github_url in github_pairs:
-                compact = compact_record(record, original_url, github_url)
-                records_out.write(
-                    json.dumps(compact, ensure_ascii=False, sort_keys=True) + "\n"
-                )
-                repository_records[github_url.lower()].append(compact)
-                github_records += 1
+                row = compact_record(record, original_url, github_url)
+                record_writer.writerow(row)
+                repository_records[github_url.lower()].append(row)
+                github_record_links += 1
 
             if total_records % 100_000 == 0:
                 print(
                     f"Processed {total_records:,} software records; "
-                    f"{github_records:,} GitHub record links",
+                    f"{github_record_links:,} GitHub links",
                     flush=True,
                 )
 
-    repository_rows: list[dict[str, Any]] = []
+    repository_rows: list[dict[str, str | int]] = []
     for key in sorted(repository_records):
         grouped = repository_records[key]
         representative = grouped[0]
@@ -289,88 +281,40 @@ def write_outputs(
             {
                 "github_repository_url": representative["github_repository_url"],
                 "record_count": len(grouped),
-                "representative_title": representative.get("main_title") or "",
+                "representative_title": representative["main_title"],
                 "openaire_ids": " | ".join(
-                    sorted(
-                        {
-                            str(row["openaire_id"])
-                            for row in grouped
-                            if row.get("openaire_id")
-                        }
-                    )
+                    sorted({row["openaire_id"] for row in grouped if row["openaire_id"]})
                 ),
                 "programming_languages": " | ".join(
                     sorted(
                         {
-                            str(row["programming_language"])
+                            row["programming_language"]
                             for row in grouped
-                            if row.get("programming_language")
+                            if row["programming_language"]
                         }
                     )
                 ),
                 "publication_dates": " | ".join(
                     sorted(
                         {
-                            str(row["publication_date"])
+                            row["publication_date"]
                             for row in grouped
-                            if row.get("publication_date")
+                            if row["publication_date"]
                         }
                     )
                 ),
             }
         )
 
-    fieldnames = [
-        "github_repository_url",
-        "record_count",
-        "representative_title",
-        "openaire_ids",
-        "programming_languages",
-        "publication_dates",
-    ]
     with repositories_path.open("w", encoding="utf-8", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer = csv.DictWriter(output, fieldnames=REPOSITORY_FIELDS)
         writer.writeheader()
         writer.writerows(repository_rows)
-
-    rng = random.Random(sample_seed)
-    actual_sample_size = min(sample_size, len(repository_rows))
-    sampled = rng.sample(repository_rows, actual_sample_size)
-    sampled.sort(key=lambda row: row["github_repository_url"].lower())
-
-    sample_fieldnames = [
-        "sample_id",
-        *fieldnames,
-        "manual_collection",
-        "manual_processing",
-        "manual_implementation",
-        "manual_experimentation",
-        "manual_evaluation",
-        "manual_dissemination",
-        "annotation_notes",
-    ]
-    with sample_path.open("w", encoding="utf-8", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=sample_fieldnames)
-        writer.writeheader()
-        for index, row in enumerate(sampled, start=1):
-            writer.writerow(
-                {
-                    "sample_id": f"S{index:03d}",
-                    **row,
-                    "manual_collection": "",
-                    "manual_processing": "",
-                    "manual_implementation": "",
-                    "manual_experimentation": "",
-                    "manual_evaluation": "",
-                    "manual_dissemination": "",
-                    "annotation_notes": "",
-                }
-            )
 
     summary = {
         "source": {
             "zenodo_record": "https://zenodo.org/records/12819872",
-            "software_tar_url": DEFAULT_SOURCE_URL,
+            "software_tar_filename": source_tar.name,
             "source_tar_size_bytes": source_tar.stat().st_size,
         },
         "filter": {
@@ -381,24 +325,15 @@ def write_outputs(
         "counts": {
             "software_records_total": total_records,
             "records_with_code_repository_url": records_with_code_repo,
-            "github_record_links": github_records,
+            "github_record_links": github_record_links,
             "unique_github_repositories": len(repository_rows),
-            "non_github_or_invalid_code_repository_urls": (
-                invalid_or_non_github_code_repo
-            ),
-            "validation_sample_size": actual_sample_size,
-        },
-        "sampling": {
-            "method": "simple random sample without replacement",
-            "population": "deduplicated normalized GitHub repositories",
-            "seed": sample_seed,
-            "requested_size": sample_size,
+            "non_github_or_invalid_code_repository_urls": non_github_or_invalid,
         },
         "outputs": {
-            "record_level_jsonl": str(records_path),
+            "record_level_csv": str(records_path),
             "repository_level_csv": str(repositories_path),
-            "validation_sample_csv": str(sample_path),
         },
+        "annotations": "Not included. Annotation data must be stored separately.",
     }
     summary_path.write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
@@ -406,48 +341,35 @@ def write_outputs(
     )
 
     print(json.dumps(summary["counts"], indent=2), flush=True)
+    print(f"Wrote {records_path}", flush=True)
+    print(f"Wrote {repositories_path}", flush=True)
+    print(f"Wrote {summary_path}", flush=True)
     return summary
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Download/parse the OpenAIRE software dump and keep software records "
-            "whose codeRepositoryUrl points to a GitHub repository."
+            "Compile a local OpenAIRE software.tar into GitHub-linked CSV datasets."
         )
     )
-    parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
     parser.add_argument(
-        "--source-tar",
+        "software_tar",
         type=Path,
-        help="Use an already downloaded software.tar instead of downloading it.",
+        help="Path to the downloaded Zenodo software.tar file.",
     )
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--sample-size", type=int, default=DEFAULT_SAMPLE_SIZE)
-    parser.add_argument("--sample-seed", type=int, default=DEFAULT_SAMPLE_SEED)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR}).",
+    )
     args = parser.parse_args()
 
-    if args.source_tar is not None:
-        source_tar = args.source_tar
-        if not source_tar.exists():
-            raise SystemExit(f"Source tar does not exist: {source_tar}")
-        write_outputs(
-            source_tar,
-            args.output_dir,
-            args.sample_size,
-            args.sample_seed,
-        )
-        return
+    if not args.software_tar.is_file():
+        raise SystemExit(f"software.tar not found: {args.software_tar}")
 
-    with tempfile.TemporaryDirectory(prefix="openaire-software-") as temp:
-        source_tar = Path(temp) / "software.tar"
-        download_source(args.source_url, source_tar)
-        write_outputs(
-            source_tar,
-            args.output_dir,
-            args.sample_size,
-            args.sample_seed,
-        )
+    compile_dataset(args.software_tar, args.output_dir)
 
 
 if __name__ == "__main__":
