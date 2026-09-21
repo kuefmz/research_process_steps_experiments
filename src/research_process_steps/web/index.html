@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Research Process Steps Explorer</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #18202b;
+      background: #f5f7fa;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .page { max-width: 1220px; margin: 0 auto; padding: 34px 22px 60px; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    .subtitle { margin: 0 0 26px; color: #5b6573; max-width: 820px; line-height: 1.5; }
+    .panel {
+      background: white;
+      border: 1px solid #dfe4ea;
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 4px 18px rgba(20,30,45,.04);
+    }
+    .form-row { display: grid; grid-template-columns: 1fr 130px; gap: 10px; }
+    input, select, button {
+      font: inherit;
+      border-radius: 9px;
+      border: 1px solid #cfd6de;
+      padding: 11px 12px;
+    }
+    button {
+      border: 0;
+      background: #18202b;
+      color: white;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: wait; }
+    .examples { margin-top: 10px; color: #687382; font-size: 13px; }
+    .examples button {
+      padding: 0;
+      background: none;
+      color: #315f9a;
+      font-weight: 500;
+      text-decoration: underline;
+    }
+    .status { margin-top: 12px; min-height: 22px; color: #5c6673; }
+    .error { color: #a52a2a; }
+    .hidden { display: none; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 10px;
+      margin: 18px 0;
+    }
+    .metric {
+      background: white;
+      border: 1px solid #dfe4ea;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .metric .value { font-size: 23px; font-weight: 700; }
+    .metric .label { color: #6a7480; font-size: 12px; margin-top: 3px; text-transform: capitalize; }
+    .controls {
+      display: grid;
+      grid-template-columns: minmax(240px,1fr) 190px;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 68vh;
+      border: 1px solid #dfe4ea;
+      border-radius: 12px;
+      background: white;
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; }
+    th, td { text-align: left; vertical-align: top; padding: 11px 12px; border-bottom: 1px solid #edf0f3; }
+    th {
+      position: sticky;
+      top: 0;
+      background: #fafbfc;
+      z-index: 1;
+      font-size: 12px;
+      color: #5d6875;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    td { font-size: 13px; }
+    .path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-word; }
+    .chips { display: flex; gap: 5px; flex-wrap: wrap; }
+    .chip {
+      display: inline-block;
+      border: 1px solid #ccd5df;
+      border-radius: 999px;
+      padding: 3px 7px;
+      background: #f7f9fb;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .none { color: #8a939d; }
+    details { max-width: 470px; }
+    summary { cursor: pointer; color: #315f9a; }
+    .evidence { margin-top: 7px; display: grid; gap: 7px; }
+    .evidence-item { border-left: 3px solid #cad2dc; padding-left: 8px; line-height: 1.35; }
+    .match {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #fff3c4;
+      border-radius: 4px;
+      padding: 1px 4px;
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .meta { color: #737e8a; font-size: 11px; }
+    @media (max-width: 850px) {
+      .form-row, .controls { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>Research Process Steps Explorer</h1>
+    <p class="subtitle">
+      Paste a public GitHub repository URL. The backend applies only deterministic heuristics and shows,
+      file by file, the detected research process step(s), the rule that fired, and the exact matched text.
+    </p>
+
+    <section class="panel">
+      <div class="form-row">
+        <input id="repo" type="url" placeholder="https://github.com/owner/repository"
+               value="https://github.com/KnowledgeCaptureAndDiscovery/somef" />
+        <button id="analyze">Analyze repository</button>
+      </div>
+      <div class="examples">
+        Example:
+        <button data-url="https://github.com/KnowledgeCaptureAndDiscovery/somef">SoMEF</button>
+        ·
+        <button data-url="https://github.com/paperswithcode/paperswithcode-data">Papers with Code data</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section id="results" class="hidden">
+      <div id="summary" class="summary"></div>
+
+      <div class="controls">
+        <input id="search" placeholder="Filter by file path, matched keyword, or rule..." />
+        <select id="stepFilter">
+          <option value="">All steps</option>
+          <option value="collection">Collection</option>
+          <option value="processing">Processing</option>
+          <option value="implementation">Implementation</option>
+          <option value="experimentation">Experimentation</option>
+          <option value="evaluation">Evaluation</option>
+          <option value="dissemination">Dissemination</option>
+          <option value="__unclassified__">Unclassified</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Research process step</th>
+              <th>Score</th>
+              <th>Why / matched keyword</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const repoInput = document.getElementById("repo");
+    const analyzeButton = document.getElementById("analyze");
+    const status = document.getElementById("status");
+    const results = document.getElementById("results");
+    const rows = document.getElementById("rows");
+    const summary = document.getElementById("summary");
+    const searchInput = document.getElementById("search");
+    const stepFilter = document.getElementById("stepFilter");
+    let data = null;
+
+    document.querySelectorAll("[data-url]").forEach(button => {
+      button.addEventListener("click", () => {
+        repoInput.value = button.dataset.url;
+      });
+    });
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      })[char]);
+    }
+
+    function renderSummary(payload) {
+      const counts = payload.summary.files_per_step;
+      const metrics = [
+        ["Files", payload.repository.file_count],
+        ...Object.entries(counts).map(([step, count]) => [step, count])
+      ];
+      summary.innerHTML = metrics.map(([label, value]) =>
+        `<div class="metric"><div class="value">${value}</div><div class="label">${escapeHtml(label)}</div></div>`
+      ).join("");
+    }
+
+    function searchableText(file) {
+      return [
+        file.path,
+        ...file.steps,
+        ...file.evidence.flatMap(e => [e.rule_id, e.matched_text, e.description, e.step])
+      ].join(" ").toLowerCase();
+    }
+
+    function renderRows() {
+      if (!data) return;
+      const query = searchInput.value.trim().toLowerCase();
+      const filter = stepFilter.value;
+
+      const filtered = data.files.filter(file => {
+        const searchOk = !query || searchableText(file).includes(query);
+        const stepOk = !filter ||
+          (filter === "__unclassified__" ? file.unclassified : file.steps.includes(filter));
+        return searchOk && stepOk;
+      });
+
+      rows.innerHTML = filtered.map(file => {
+        const chips = file.steps.length
+          ? `<div class="chips">${file.steps.map(step => `<span class="chip">${escapeHtml(step)}</span>`).join("")}</div>`
+          : '<span class="none">unclassified</span>';
+
+        const scores = Object.entries(file.scores || {})
+          .map(([step, score]) => `${escapeHtml(step)}: ${score}`).join("<br>") || "—";
+
+        const evidence = file.evidence.length
+          ? `<details><summary>${file.evidence.length} matched rule${file.evidence.length === 1 ? "" : "s"}</summary>
+               <div class="evidence">
+                 ${file.evidence.map(e => `
+                   <div class="evidence-item">
+                     <strong>${escapeHtml(e.step)}</strong> — ${escapeHtml(e.description)}<br>
+                     <span class="match">${escapeHtml(e.matched_text)}</span>
+                     <div class="meta">${escapeHtml(e.rule_id)} · source: ${escapeHtml(e.source)} · weight: ${e.weight}</div>
+                   </div>`).join("")}
+               </div>
+             </details>`
+          : '<span class="none">No heuristic matched</span>';
+
+        return `<tr>
+          <td class="path">${escapeHtml(file.path)}</td>
+          <td>${chips}</td>
+          <td>${scores}</td>
+          <td>${evidence}</td>
+        </tr>`;
+      }).join("");
+
+      status.textContent = `Showing ${filtered.length} of ${data.files.length} files from ${data.repository.full_name} @ ${data.repository.ref}`;
+    }
+
+    async function analyze() {
+      const repoUrl = repoInput.value.trim();
+      if (!repoUrl) return;
+
+      analyzeButton.disabled = true;
+      status.className = "status";
+      status.textContent = "Analyzing repository…";
+      results.classList.add("hidden");
+
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repo_url: repoUrl })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Analysis failed.");
+
+        data = payload;
+        renderSummary(data);
+        searchInput.value = "";
+        stepFilter.value = "";
+        results.classList.remove("hidden");
+        renderRows();
+      } catch (error) {
+        data = null;
+        status.className = "status error";
+        status.textContent = error.message;
+      } finally {
+        analyzeButton.disabled = false;
+      }
+    }
+
+    analyzeButton.addEventListener("click", analyze);
+    repoInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") analyze();
+    });
+    searchInput.addEventListener("input", renderRows);
+    stepFilter.addEventListener("change", renderRows);
+  </script>
+</body>
+</html>
