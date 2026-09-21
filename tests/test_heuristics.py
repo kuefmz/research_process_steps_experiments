@@ -72,3 +72,35 @@ def test_preserves_multiple_unique_content_matches():
         {"text": "recall", "line": 2},
         {"text": "f1_score", "line": 4},
     ]
+
+
+def test_ttl_test_fixture_is_data_not_implementation():
+    result = analyze_file("test/business.ttl")
+    assert result["artifact_kind"] == "data"
+    assert "implementation" not in result["steps"]
+    assert any(
+        item["rule_id"] == "IMP_PATH_TESTS"
+        for item in result["suppressed_evidence"]
+    )
+
+
+def test_data_file_under_src_is_not_implementation():
+    result = analyze_file("src/resources/example.csv")
+    assert result["artifact_kind"] == "data"
+    assert "implementation" not in result["steps"]
+    assert any(
+        item["rule_id"] == "IMP_PATH_SOURCE_DIR"
+        for item in result["suppressed_evidence"]
+    )
+
+
+def test_source_code_under_tests_remains_implementation():
+    result = analyze_file("tests/test_parser.py")
+    assert result["artifact_kind"] == "source_code"
+    assert "implementation" in result["steps"]
+
+
+def test_markdown_under_src_is_documentation_not_implementation():
+    result = analyze_file("src/README.md")
+    assert result["artifact_kind"] == "documentation"
+    assert "implementation" not in result["steps"]
