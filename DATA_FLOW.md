@@ -10,7 +10,7 @@ The shared dataset starts from the OpenAIRE software export published on Zenodo:
 - Archive: `software.tar`
 - Source URL: `https://zenodo.org/records/12819872/files/software.tar?download=1`
 
-The raw archive is **not modified** by this project and does not need to be committed to Git.
+The raw archive is kept locally at `data/raw/software.tar`. The `data/raw/` directory is ignored by Git, so the large archive stays inside the project folder without being committed.
 
 ## Shared-data pipeline
 
@@ -48,7 +48,7 @@ The pipeline is implemented by:
 Run it from a locally downloaded archive:
 
 ```bash
-python scripts/compile_openaire_github_dataset.py /path/to/software.tar
+python scripts/compile_openaire_github_dataset.py
 ```
 
 ## Shared outputs
