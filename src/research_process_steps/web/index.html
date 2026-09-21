@@ -92,6 +92,8 @@
     .path a, .match-link { color: #245ea6; text-decoration: none; }
     .path a:hover, .match-link:hover { text-decoration: underline; }
     .cache-badge { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: #e8f4ec; color: #28613b; font-size: 11px; font-weight: 650; }
+    .kind-badge { display: inline-block; margin-top: 5px; padding: 2px 7px; border-radius: 999px; background: #eef3f8; color: #40556d; font-size: 11px; }
+    .suppressed { margin-top: 7px; border-left: 3px solid #d6a85f; padding-left: 8px; color: #6f5630; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; }
     .chip {
       display: inline-block;
@@ -220,6 +222,7 @@
     function searchableText(file) {
       return [
         file.path,
+        file.artifact_kind || "",
         ...file.steps,
         ...file.evidence.flatMap(e => [e.rule_id, ...(e.matches || []).map(m => m.text), ...(e.matched_texts || [e.matched_text]), e.description, e.step])
       ].join(" ").toLowerCase();
@@ -245,6 +248,12 @@
         const scores = Object.entries(file.scores || {})
           .map(([step, score]) => `${escapeHtml(step)}: ${score}`).join("<br>") || "—";
 
+        const suppressed = (file.suppressed_evidence || []).length
+          ? `<div class="suppressed"><strong>Suppressed:</strong> ${file.suppressed_evidence.map(item =>
+               `${escapeHtml(item.rule_id)} — ${escapeHtml(item.reason)}`
+             ).join("<br>")}</div>`
+          : "";
+
         const evidence = file.evidence.length
           ? `<details><summary>${file.evidence.length} matched rule${file.evidence.length === 1 ? "" : "s"}</summary>
                <div class="evidence">
@@ -265,8 +274,8 @@
                    </div>`;
                  }).join("")}
                </div>
-             </details>`
-          : '<span class="none">No heuristic matched</span>';
+             </details>${suppressed}`
+          : `<span class="none">No heuristic matched</span>${suppressed}`;
 
         const fileCell = file.file_url
           ? `<a href="${escapeHtml(file.file_url)}" target="_blank" rel="noopener">${escapeHtml(file.path)}</a>`
@@ -276,6 +285,7 @@
         const inferredDirectory = file.directory ?? file.path.split("/").slice(0, -1).join("/");
         const inferredExtension = file.extension || (inferredName.includes(".") ? "." + inferredName.split(".").pop() : "");
         const fileDetails = `
+          <div class="kind-badge">artifact: ${escapeHtml(file.artifact_kind || "other")}</div>
           <details class="file-details">
             <summary>File details</summary>
             <dl class="file-details-grid">
