@@ -17,6 +17,7 @@ from .heuristics import CONTENT_EXTENSIONS, RESEARCH_PROCESS_STEPS, RULES
 DEFAULT_CONTENT_LIMIT = 250_000
 DETECTION_THRESHOLD = 2
 USER_AGENT = "research-process-steps/0.1"
+MAX_MATCHES_PER_RULE = 20
 
 
 def _parse_github_url(repository_url: str) -> tuple[str, str]:
@@ -70,6 +71,21 @@ def _content_is_scannable(path: str) -> bool:
     return Path(name).suffix.lower() in CONTENT_EXTENSIONS
 
 
+def _unique_matches(rule, haystack: str) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for match in rule.pattern.finditer(haystack):
+        value = match.group(0)[:160]
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        values.append(value)
+        if len(values) >= MAX_MATCHES_PER_RULE:
+            break
+    return values
+
+
 def analyze_file(path: str, content: str = "") -> dict[str, Any]:
     """Classify one repository file using explicit deterministic rules.
 
@@ -85,8 +101,9 @@ def analyze_file(path: str, content: str = "") -> dict[str, Any]:
         haystack = path if rule.source == "path" else content
         if not haystack:
             continue
-        match = rule.pattern.search(haystack)
-        if not match:
+
+        matched_texts = _unique_matches(rule, haystack)
+        if not matched_texts:
             continue
 
         scores[rule.step] += rule.weight
@@ -96,7 +113,8 @@ def analyze_file(path: str, content: str = "") -> dict[str, Any]:
                 "step": rule.step,
                 "source": rule.source,
                 "weight": rule.weight,
-                "matched_text": match.group(0)[:160],
+                "matched_text": matched_texts[0],
+                "matched_texts": matched_texts,
                 "description": rule.description,
             }
         )
