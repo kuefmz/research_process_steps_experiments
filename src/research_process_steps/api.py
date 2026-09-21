@@ -12,7 +12,19 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .analyzer import DEFAULT_CONTENT_LIMIT, analyze_github_repository
+from .analyzer import DEFAULT_CONTENT_LIMIT
+from .batch import (
+    ALLOWED_BATCH_SIZES,
+    DEFAULT_DATASET,
+    execute_repository_once,
+    run_random_batch,
+)
+from .storage import (
+    list_executions,
+    load_result,
+    load_result_by_id,
+    save_result,
+)
 
 
 class AnalyzeRequest(BaseModel):
@@ -26,13 +38,17 @@ class AnalyzeRequest(BaseModel):
     )
 
 
+class RandomBatchRequest(BaseModel):
+    count: int = Field(..., examples=[100])
+
+
 app = FastAPI(
     title="Research Process Steps Heuristic API",
     description=(
         "Deterministic, no-AI API that maps files in a GitHub repository to "
-        "research process steps and returns the exact heuristic evidence."
+        "research process steps and persistently stores every repository result."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
 WEB_DIR = Path(__file__).with_name("web")
@@ -125,48 +141,88 @@ def health() -> dict[str, Any]:
         "status": "ok",
         "method": "deterministic_heuristics",
         "uses_ai": False,
+        "dataset": str(DEFAULT_DATASET),
+        "allowed_batch_sizes": sorted(ALLOWED_BATCH_SIZES),
     }
+
+
+@app.get("/api/executed")
+def executed_repositories() -> dict[str, Any]:
+    executions = list_executions()
+    return {"count": len(executions), "repositories": executions}
+
+
+@app.get("/api/executed/{execution_id}")
+def executed_repository(execution_id: str) -> dict[str, Any]:
+    result = load_result_by_id(execution_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Stored repository result not found.")
+    return result
+
+
+@app.post("/api/random")
+def random_batch(request: RandomBatchRequest) -> dict[str, Any]:
+    if request.count not in ALLOWED_BATCH_SIZES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"count must be one of {sorted(ALLOWED_BATCH_SIZES)}",
+        )
+    try:
+        return run_random_batch(
+            request.count,
+            dataset_path=DEFAULT_DATASET,
+            token=os.getenv("GITHUB_TOKEN"),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Random batch failed: {exc}") from exc
 
 
 @app.post("/api/analyze")
 def analyze(request: AnalyzeRequest) -> dict[str, Any]:
+    """Analyze once; all later requests for the same repository reuse storage."""
     try:
+        existing = load_result(request.repo_url)
+        if existing is not None:
+            return existing
+
+        # Preserve the precomputed demos, but promote them into the general
+        # repository store so they participate in history and no-repeat logic.
         bundled_path = _bundled_demo_path(request)
         if bundled_path is not None:
             bundled = _load_cache(bundled_path)
             if bundled is not None:
-                bundled["cache"] = {
-                    "hit": True,
-                    "persistent": True,
-                    "precomputed": True,
-                    "path": str(bundled_path),
-                }
-                return bundled
+                return save_result(request.repo_url, bundled)
 
         cache_path = _demo_cache_path(request)
         if cache_path is not None:
             cached = _load_cache(cache_path)
             if cached is not None:
-                return cached
+                return save_result(request.repo_url, cached)
 
-        result = analyze_github_repository(
+        if request.ref is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Persistent repository executions are keyed by repository URL. "
+                    "Custom refs are disabled to guarantee that a repository is never "
+                    "executed twice."
+                ),
+            )
+
+        result, _ = execute_repository_once(
             request.repo_url,
             token=os.getenv("GITHUB_TOKEN"),
-            ref=request.ref,
             max_content_bytes=request.max_content_bytes,
         )
-        result["cache"] = {
-            "hit": False,
-            "persistent": cache_path is not None,
-            "path": str(cache_path) if cache_path is not None else None,
-        }
-        if cache_path is not None:
-            _save_cache(cache_path, result)
         return result
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -194,15 +250,11 @@ def run() -> None:
 def precache_demo() -> None:
     """Populate persistent caches for the repositories used in demonstrations."""
     for name, repo_url in DEMO_REPOSITORIES.items():
-        request = AnalyzeRequest(repo_url=repo_url)
-        cache_path = _demo_cache_path(request)
-        if cache_path is not None and cache_path.exists():
-            print(f"{name}: already cached at {cache_path}")
+        existing = load_result(repo_url)
+        if existing is not None:
+            print(f"{name}: already stored")
             continue
-
-        print(f"{name}: analyzing {repo_url} ...")
+        request = AnalyzeRequest(repo_url=repo_url)
+        print(f"{name}: loading precomputed result for {repo_url} ...")
         result = analyze(request)
-        if result.get("cache", {}).get("persistent"):
-            print(f"{name}: cached at {result['cache']['path']}")
-        else:
-            print(f"{name}: analysis completed")
+        print(f"{name}: stored as {result.get('execution', {}).get('id')}")
