@@ -212,12 +212,17 @@ def analyze_github_repository(
                 line = match.get("line")
                 match["url"] = f"{file_url}#L{line}" if line else file_url
 
+        file_path = Path(path)
         result.update(
             {
+                "file_name": file_path.name,
+                "directory": "" if str(file_path.parent) == "." else str(file_path.parent),
+                "extension": file_path.suffix.lower(),
                 "size_bytes": size,
                 "content_scanned": content_scanned,
                 "blob_sha": item.get("sha"),
                 "file_url": file_url,
+                "ref": chosen_ref,
             }
         )
         output_files.append(result)
