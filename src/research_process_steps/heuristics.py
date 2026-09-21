@@ -88,7 +88,7 @@ RULES = (
        r"(^|/)(cli|main|app|server)\.(py|js|ts|go|rs|java)$",
        "Filename is a conventional executable/application entry point."),
     _r("IMP_CONTENT_ENTRYPOINT", "implementation", 1, "content",
-       r"\b(if __name__\s*==\s*["']__main__["']|argparse\.|click\.(command|group)|typer\.Typer|console_scripts)\b",
+       r'\\b(if __name__\\s*==\\s*["\\\']__main__["\\\']|argparse\\.|click\\.(command|group)|typer\\.Typer|console_scripts)\\b',
        "File contains an executable or CLI entry-point pattern."),
 
     # EXPERIMENTATION
