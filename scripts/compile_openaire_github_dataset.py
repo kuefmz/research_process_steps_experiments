@@ -15,16 +15,19 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import hashlib
 import io
 import json
 import re
 import tarfile
+from datetime import datetime, timezone
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
 DEFAULT_OUTPUT_DIR = Path("data/openaire_zenodo_12819872")
+COMPILER_VERSION = "1.1.0"
 
 GITHUB_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 GITHUB_RESERVED_ROOTS = {
@@ -58,6 +61,14 @@ REPOSITORY_FIELDS = [
     "programming_languages",
     "publication_dates",
 ]
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _iter_values(value: Any) -> Iterable[str]:
@@ -233,6 +244,7 @@ def compile_dataset(source_tar: Path, output_dir: Path) -> dict[str, Any]:
     records_path = output_dir / "github_software_records.csv"
     repositories_path = output_dir / "github_repositories.csv"
     summary_path = output_dir / "summary.json"
+    data_flow_path = output_dir / "data_flow.json"
 
     total_records = 0
     records_with_code_repo = 0
@@ -311,11 +323,17 @@ def compile_dataset(source_tar: Path, output_dir: Path) -> dict[str, Any]:
         writer.writeheader()
         writer.writerows(repository_rows)
 
+    input_sha256 = sha256_file(source_tar)
+    records_sha256 = sha256_file(records_path)
+    repositories_sha256 = sha256_file(repositories_path)
+    generated_at = datetime.now(timezone.utc).isoformat()
+
     summary = {
         "source": {
             "zenodo_record": "https://zenodo.org/records/12819872",
             "software_tar_filename": source_tar.name,
             "source_tar_size_bytes": source_tar.stat().st_size,
+            "sha256": input_sha256,
         },
         "filter": {
             "field": "codeRepositoryUrl",
@@ -330,13 +348,111 @@ def compile_dataset(source_tar: Path, output_dir: Path) -> dict[str, Any]:
             "non_github_or_invalid_code_repository_urls": non_github_or_invalid,
         },
         "outputs": {
-            "record_level_csv": str(records_path),
-            "repository_level_csv": str(repositories_path),
+            "record_level_csv": {
+                "path": str(records_path),
+                "sha256": records_sha256,
+            },
+            "repository_level_csv": {
+                "path": str(repositories_path),
+                "sha256": repositories_sha256,
+            },
+        },
+        "compiler": {
+            "script": "scripts/compile_openaire_github_dataset.py",
+            "version": COMPILER_VERSION,
+            "generated_at_utc": generated_at,
         },
         "annotations": "Not included. Annotation data must be stored separately.",
     }
+
+    data_flow = {
+        "pipeline_name": "OpenAIRE software to GitHub repository dataset",
+        "pipeline_version": COMPILER_VERSION,
+        "generated_at_utc": generated_at,
+        "source": {
+            "zenodo_record": "https://zenodo.org/records/12819872",
+            "archive_filename": source_tar.name,
+            "archive_size_bytes": source_tar.stat().st_size,
+            "archive_sha256": input_sha256,
+        },
+        "stages": [
+            {
+                "stage": 1,
+                "name": "read_openaire_software_records",
+                "input": "software.tar",
+                "operation": (
+                    "Stream JSON-lines software records from members of the "
+                    "OpenAIRE software archive."
+                ),
+                "output_count": total_records,
+            },
+            {
+                "stage": 2,
+                "name": "select_records_with_code_repository_url",
+                "input_count": total_records,
+                "operation": (
+                    "Keep track of records where the OpenAIRE codeRepositoryUrl "
+                    "field is present."
+                ),
+                "output_count": records_with_code_repo,
+            },
+            {
+                "stage": 3,
+                "name": "filter_github_repositories",
+                "input_count": records_with_code_repo,
+                "operation": (
+                    "Accept only codeRepositoryUrl values whose host is github.com "
+                    "and which can be parsed as OWNER/REPO."
+                ),
+                "output_count": github_record_links,
+                "rejected_count": non_github_or_invalid,
+            },
+            {
+                "stage": 4,
+                "name": "normalize_github_repository_urls",
+                "operation": (
+                    "Normalize GitHub references to https://github.com/OWNER/REPO; "
+                    "remove .git and deep-link path components."
+                ),
+                "record_level_output": str(records_path),
+                "record_level_sha256": records_sha256,
+                "output_count": github_record_links,
+            },
+            {
+                "stage": 5,
+                "name": "deduplicate_by_normalized_repository_url",
+                "input_count": github_record_links,
+                "operation": (
+                    "Case-insensitive deduplication by normalized GitHub repository "
+                    "URL while preserving the OpenAIRE IDs associated with each repo."
+                ),
+                "repository_level_output": str(repositories_path),
+                "repository_level_sha256": repositories_sha256,
+                "output_count": len(repository_rows),
+            },
+        ],
+        "separation_of_concerns": {
+            "shared_data": "data/openaire_zenodo_12819872/",
+            "annotations": "annotations/",
+            "rule": (
+                "Shared CSV files contain no manual labels. Validation samples and "
+                "manual annotations must be derived separately from github_repositories.csv."
+            ),
+        },
+        "reproduce": {
+            "command": (
+                "python scripts/compile_openaire_github_dataset.py "
+                "/path/to/software.tar"
+            ),
+            "script": "scripts/compile_openaire_github_dataset.py",
+        },
+    }
     summary_path.write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    data_flow_path.write_text(
+        json.dumps(data_flow, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 
@@ -344,6 +460,7 @@ def compile_dataset(source_tar: Path, output_dir: Path) -> dict[str, Any]:
     print(f"Wrote {records_path}", flush=True)
     print(f"Wrote {repositories_path}", flush=True)
     print(f"Wrote {summary_path}", flush=True)
+    print(f"Wrote {data_flow_path}", flush=True)
     return summary
 
 
