@@ -214,7 +214,7 @@
       return [
         file.path,
         ...file.steps,
-        ...file.evidence.flatMap(e => [e.rule_id, e.matched_text, e.description, e.step])
+        ...file.evidence.flatMap(e => [e.rule_id, ...(e.matched_texts || [e.matched_text]), e.description, e.step])
       ].join(" ").toLowerCase();
     }
 
@@ -244,7 +244,7 @@
                  ${file.evidence.map(e => `
                    <div class="evidence-item">
                      <strong>${escapeHtml(e.step)}</strong> — ${escapeHtml(e.description)}<br>
-                     <span class="match">${escapeHtml(e.matched_text)}</span>
+                     ${(e.matched_texts || [e.matched_text]).map(match => `<span class="match">${escapeHtml(match)}</span>`).join(" ")}
                      <div class="meta">${escapeHtml(e.rule_id)} · source: ${escapeHtml(e.source)} · weight: ${e.weight}</div>
                    </div>`).join("")}
                </div>
