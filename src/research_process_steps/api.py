@@ -36,6 +36,7 @@ app = FastAPI(
 )
 
 WEB_DIR = Path(__file__).with_name("web")
+BUNDLED_CACHE_DIR = Path(__file__).with_name("demo_cache")
 CACHE_VERSION = "v2"
 CACHE_DIR = Path(
     os.getenv(
@@ -51,10 +52,26 @@ DEMO_REPOSITORY_URLS = {
     _url.rstrip("/").removesuffix(".git").lower()
     for _url in DEMO_REPOSITORIES.values()
 }
+BUNDLED_DEMO_FILES = {
+    "https://github.com/knowledgecaptureanddiscovery/somef": "somef.json",
+    "https://github.com/dgarijo/widoco": "widoco.json",
+}
 
 
 def _normalize_repo_url(repo_url: str) -> str:
     return repo_url.rstrip("/").removesuffix(".git").lower()
+
+
+def _bundled_demo_path(request: AnalyzeRequest) -> Path | None:
+    normalized = _normalize_repo_url(request.repo_url)
+    filename = BUNDLED_DEMO_FILES.get(normalized)
+    if (
+        filename is None
+        or request.ref is not None
+        or request.max_content_bytes != DEFAULT_CONTENT_LIMIT
+    ):
+        return None
+    return BUNDLED_CACHE_DIR / filename
 
 
 def _demo_cache_path(request: AnalyzeRequest) -> Path | None:
@@ -114,6 +131,18 @@ def health() -> dict[str, Any]:
 @app.post("/api/analyze")
 def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     try:
+        bundled_path = _bundled_demo_path(request)
+        if bundled_path is not None:
+            bundled = _load_cache(bundled_path)
+            if bundled is not None:
+                bundled["cache"] = {
+                    "hit": True,
+                    "persistent": True,
+                    "precomputed": True,
+                    "path": str(bundled_path),
+                }
+                return bundled
+
         cache_path = _demo_cache_path(request)
         if cache_path is not None:
             cached = _load_cache(cache_path)
