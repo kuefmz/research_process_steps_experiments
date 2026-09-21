@@ -1,0 +1,31 @@
+{
+  "source": {
+    "zenodo_record": "https://zenodo.org/records/12819872",
+    "software_tar_url": "https://zenodo.org/records/12819872/files/software.tar?download=1",
+    "source_tar_size_bytes": 122337280
+  },
+  "filter": {
+    "field": "codeRepositoryUrl",
+    "host": "github.com",
+    "normalization": "https://github.com/OWNER/REPO"
+  },
+  "counts": {
+    "software_records_total": 375072,
+    "records_with_code_repository_url": 119246,
+    "github_record_links": 112467,
+    "unique_github_repositories": 105516,
+    "non_github_or_invalid_code_repository_urls": 6779,
+    "validation_sample_size": 100
+  },
+  "sampling": {
+    "method": "simple random sample without replacement",
+    "population": "deduplicated normalized GitHub repositories",
+    "seed": 42,
+    "requested_size": 100
+  },
+  "outputs": {
+    "record_level_jsonl": "data/openaire_zenodo_12819872/github_software_records.jsonl",
+    "repository_level_csv": "data/openaire_zenodo_12819872/github_repositories.csv",
+    "validation_sample_csv": "data/openaire_zenodo_12819872/validation_sample_100.csv"
+  }
+}
