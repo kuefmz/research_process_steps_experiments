@@ -1,0 +1,3 @@
+# Local raw source archives (large, reproducible downloads)
+data/raw/*
+!data/raw/.gitkeep
