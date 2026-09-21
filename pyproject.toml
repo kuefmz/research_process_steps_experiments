@@ -7,13 +7,20 @@ name = "research-process-steps"
 version = "0.1.0"
 description = "Deterministic heuristics for identifying research process steps from GitHub repository files"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+]
 
 [project.scripts]
 research-process-steps = "research_process_steps.analyzer:main"
+research-process-steps-web = "research_process_steps.api:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+research_process_steps = ["web/*.html"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
