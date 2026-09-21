@@ -50,3 +50,20 @@ def test_file_can_have_multiple_steps():
     )
     assert "experimentation" in result
     assert "evaluation" in result
+
+
+def test_preserves_multiple_unique_content_matches():
+    result = analyze_file(
+        "analysis.py",
+        "precision = 0.8\nrecall = 0.7\nprecision = 0.8\nf1_score = 0.75",
+    )
+    metric_evidence = next(
+        evidence
+        for evidence in result["evidence"]
+        if evidence["rule_id"] == "EVA_CONTENT_METRIC"
+    )
+    assert metric_evidence["matched_texts"] == [
+        "precision",
+        "recall",
+        "f1_score",
+    ]
