@@ -14,15 +14,18 @@
     body { margin: 0; }
     .page { max-width: 1220px; margin: 0 auto; padding: 34px 22px 60px; }
     h1 { margin: 0 0 8px; font-size: 30px; }
-    .subtitle { margin: 0 0 26px; color: #5b6573; max-width: 820px; line-height: 1.5; }
+    h2 { margin: 0 0 10px; font-size: 19px; }
+    .subtitle { margin: 0 0 26px; color: #5b6573; max-width: 900px; line-height: 1.5; }
     .panel {
       background: white;
       border: 1px solid #dfe4ea;
       border-radius: 14px;
       padding: 18px;
       box-shadow: 0 4px 18px rgba(20,30,45,.04);
+      margin-bottom: 16px;
     }
-    .form-row { display: grid; grid-template-columns: 1fr 130px; gap: 10px; }
+    .panel-copy { margin: 0 0 12px; color: #687382; font-size: 13px; line-height: 1.45; }
+    .form-row { display: grid; grid-template-columns: 1fr 160px; gap: 10px; }
     input, select, button {
       font: inherit;
       border-radius: 9px;
@@ -36,7 +39,10 @@
       font-weight: 650;
       cursor: pointer;
     }
+    button.secondary { background: #eef2f6; color: #263445; border: 1px solid #d7dee7; }
+    button.small { padding: 6px 9px; font-size: 12px; }
     button:disabled { opacity: .55; cursor: wait; }
+    .batch-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
     .examples { margin-top: 10px; color: #687382; font-size: 13px; }
     .examples button {
       padding: 0;
@@ -44,9 +50,11 @@
       color: #315f9a;
       font-weight: 500;
       text-decoration: underline;
+      border: 0;
     }
     .status { margin-top: 12px; min-height: 22px; color: #5c6673; }
     .error { color: #a52a2a; }
+    .success { color: #28613b; }
     .hidden { display: none; }
     .summary {
       display: grid;
@@ -75,6 +83,7 @@
       border-radius: 12px;
       background: white;
     }
+    .history-wrap { max-height: 390px; }
     table { width: 100%; border-collapse: collapse; min-width: 900px; }
     th, td { text-align: left; vertical-align: top; padding: 11px 12px; border-bottom: 1px solid #edf0f3; }
     th {
@@ -89,8 +98,8 @@
     }
     td { font-size: 13px; }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-word; }
-    .path a, .match-link { color: #245ea6; text-decoration: none; }
-    .path a:hover, .match-link:hover { text-decoration: underline; }
+    .path a, .match-link, .repo-link { color: #245ea6; text-decoration: none; }
+    .path a:hover, .match-link:hover, .repo-link:hover { text-decoration: underline; }
     .cache-badge { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: #e8f4ec; color: #28613b; font-size: 11px; font-weight: 650; }
     .kind-badge { display: inline-block; margin-top: 5px; padding: 2px 7px; border-radius: 999px; background: #eef3f8; color: #40556d; font-size: 11px; }
     .suppressed { margin-top: 7px; border-left: 3px solid #d6a85f; padding-left: 8px; color: #6f5630; }
@@ -123,9 +132,11 @@
     .file-details-grid { display: grid; grid-template-columns: 110px 1fr; gap: 3px 10px; margin-top: 6px; }
     .file-details-grid dt { color: #737e8a; }
     .file-details-grid dd { margin: 0; word-break: break-word; }
+    .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
     @media (max-width: 850px) {
       .form-row, .controls { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, 1fr); }
+      .section-head { align-items: flex-start; flex-direction: column; }
     }
   </style>
 </head>
@@ -133,11 +144,12 @@
   <main class="page">
     <h1>Research Process Steps Explorer</h1>
     <p class="subtitle">
-      Paste a public GitHub repository URL. The backend applies only deterministic heuristics and shows,
-      file by file, the detected research process step(s), the rule that fired, and the exact matched text.
+      Deterministic heuristics only. Every repository is persisted after its first execution and reused forever after,
+      so the same GitHub repository is never analyzed twice.
     </p>
 
     <section class="panel">
+      <h2>Analyze one repository</h2>
       <div class="form-row">
         <input id="repo" type="url" placeholder="https://github.com/owner/repository"
                value="https://github.com/KnowledgeCaptureAndDiscovery/somef" />
@@ -150,6 +162,46 @@
         <button data-url="https://github.com/dgarijo/Widoco">WIDOCO</button>
       </div>
       <div id="status" class="status"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Run random unseen repositories</h2>
+      <p class="panel-copy">
+        Repositories are sampled from the compiled OpenAIRE GitHub corpus. Repositories with stored results are excluded
+        before sampling, and each completed repository is saved immediately.
+      </p>
+      <div id="batchButtons" class="batch-buttons">
+        <button data-count="10">Run 10 random</button>
+        <button data-count="20">Run 20 random</button>
+        <button data-count="25">Run 25 random</button>
+        <button data-count="50">Run 50 random</button>
+        <button data-count="100">Run 100 random</button>
+      </div>
+      <div id="batchStatus" class="status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>Executed repositories</h2>
+          <p id="historyCount" class="panel-copy">Loading stored results…</p>
+        </div>
+        <button id="refreshHistory" class="secondary small">Refresh</button>
+      </div>
+      <div class="table-wrap history-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Repository</th>
+              <th>Executed</th>
+              <th>Files</th>
+              <th>Step counts</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody id="historyRows"></tbody>
+        </table>
+      </div>
     </section>
 
     <section id="results" class="hidden">
@@ -189,6 +241,11 @@
     const repoInput = document.getElementById("repo");
     const analyzeButton = document.getElementById("analyze");
     const status = document.getElementById("status");
+    const batchStatus = document.getElementById("batchStatus");
+    const batchButtons = [...document.querySelectorAll("[data-count]")];
+    const historyRows = document.getElementById("historyRows");
+    const historyCount = document.getElementById("historyCount");
+    const refreshHistory = document.getElementById("refreshHistory");
     const results = document.getElementById("results");
     const rows = document.getElementById("rows");
     const summary = document.getElementById("summary");
@@ -308,8 +365,65 @@
         </tr>`;
       }).join("");
 
-      const cacheBadge = data.cache?.hit ? '<span class="cache-badge">cached result</span>' : "";
+      const cacheBadge = data.cache?.hit ? '<span class="cache-badge">stored result</span>' : '<span class="cache-badge">newly stored</span>';
       status.innerHTML = `Showing ${filtered.length} of ${data.files.length} files from ${escapeHtml(data.repository.full_name)} @ ${escapeHtml(data.repository.ref)} ${cacheBadge}`;
+    }
+
+    function showPayload(payload) {
+      data = payload;
+      renderSummary(data);
+      searchInput.value = "";
+      stepFilter.value = "";
+      results.classList.remove("hidden");
+      renderRows();
+      results.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function loadHistory() {
+      refreshHistory.disabled = true;
+      try {
+        const response = await fetch("/api/executed");
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Could not load stored results.");
+
+        historyCount.textContent = `${payload.count} repositories have persistent results.`;
+        historyRows.innerHTML = payload.repositories.map(item => {
+          const stepCounts = Object.entries(item.files_per_step || {})
+            .filter(([, count]) => count)
+            .map(([step, count]) => `${escapeHtml(step)}: ${count}`)
+            .join("<br>") || "—";
+          const executed = item.executed_at ? new Date(item.executed_at).toLocaleString() : "—";
+          return `<tr>
+            <td><a class="repo-link" href="${escapeHtml(item.repo_url)}" target="_blank" rel="noopener">${escapeHtml(item.full_name)}</a></td>
+            <td>${escapeHtml(executed)}</td>
+            <td>${Number(item.file_count || 0).toLocaleString()}</td>
+            <td>${stepCounts}</td>
+            <td><button class="secondary small view-result" data-result-id="${escapeHtml(item.id)}">View output</button></td>
+          </tr>`;
+        }).join("");
+
+        document.querySelectorAll(".view-result").forEach(button => {
+          button.addEventListener("click", () => loadStoredResult(button.dataset.resultId));
+        });
+      } catch (error) {
+        historyCount.textContent = error.message;
+      } finally {
+        refreshHistory.disabled = false;
+      }
+    }
+
+    async function loadStoredResult(id) {
+      status.className = "status";
+      status.textContent = "Loading stored repository output…";
+      try {
+        const response = await fetch(`/api/executed/${encodeURIComponent(id)}`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Could not load stored result.");
+        showPayload(payload);
+      } catch (error) {
+        status.className = "status error";
+        status.textContent = error.message;
+      }
     }
 
     async function analyze() {
@@ -319,12 +433,11 @@
       analyzeButton.disabled = true;
       status.className = "status";
       const startedAt = Date.now();
-      status.textContent = "Analyzing repository… 0s";
+      status.textContent = "Checking stored results / analyzing repository… 0s";
       const timer = setInterval(() => {
         const seconds = Math.floor((Date.now() - startedAt) / 1000);
-        status.textContent = `Analyzing repository… ${seconds}s`;
+        status.textContent = `Checking stored results / analyzing repository… ${seconds}s`;
       }, 1000);
-      results.classList.add("hidden");
 
       try {
         const response = await fetch("/api/analyze", {
@@ -334,13 +447,8 @@
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || "Analysis failed.");
-
-        data = payload;
-        renderSummary(data);
-        searchInput.value = "";
-        stepFilter.value = "";
-        results.classList.remove("hidden");
-        renderRows();
+        showPayload(payload);
+        await loadHistory();
       } catch (error) {
         data = null;
         status.className = "status error";
@@ -351,12 +459,51 @@
       }
     }
 
+    async function runBatch(count) {
+      batchButtons.forEach(button => button.disabled = true);
+      batchStatus.className = "status";
+      const startedAt = Date.now();
+      batchStatus.textContent = `Running ${count} random never-before-executed repositories… 0s. Each repository is stored as soon as it finishes.`;
+      const timer = setInterval(() => {
+        const seconds = Math.floor((Date.now() - startedAt) / 1000);
+        batchStatus.textContent = `Running ${count} random never-before-executed repositories… ${seconds}s. Each repository is stored as soon as it finishes.`;
+      }, 1000);
+
+      try {
+        const response = await fetch("/api/random", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ count })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Random batch failed.");
+
+        const completed = payload.completed?.length || 0;
+        const errors = payload.errors?.length || 0;
+        batchStatus.className = errors ? "status error" : "status success";
+        batchStatus.textContent = `Batch finished: ${completed} repositories stored, ${errors} errors. No previously executed repository was rerun.`;
+        await loadHistory();
+      } catch (error) {
+        batchStatus.className = "status error";
+        batchStatus.textContent = error.message;
+      } finally {
+        clearInterval(timer);
+        batchButtons.forEach(button => button.disabled = false);
+      }
+    }
+
     analyzeButton.addEventListener("click", analyze);
     repoInput.addEventListener("keydown", event => {
       if (event.key === "Enter") analyze();
     });
+    batchButtons.forEach(button => {
+      button.addEventListener("click", () => runBatch(Number(button.dataset.count)));
+    });
+    refreshHistory.addEventListener("click", loadHistory);
     searchInput.addEventListener("input", renderRows);
     stepFilter.addEventListener("change", renderRows);
+
+    loadHistory();
   </script>
 </body>
 </html>
