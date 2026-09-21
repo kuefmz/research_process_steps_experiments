@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -18,6 +19,7 @@ DEFAULT_CONTENT_LIMIT = 250_000
 DETECTION_THRESHOLD = 2
 USER_AGENT = "research-process-steps/0.1"
 MAX_MATCHES_PER_RULE = 20
+MAX_CONTENT_WORKERS = 12
 
 
 def _parse_github_url(repository_url: str) -> tuple[str, str]:
@@ -154,27 +156,47 @@ def analyze_github_repository(
         )
 
     files = [item for item in tree.get("tree", []) if item.get("type") == "blob"]
-    output_files: list[dict[str, Any]] = []
+    sorted_files = sorted(files, key=lambda value: value["path"].lower())
 
-    for item in sorted(files, key=lambda value: value["path"].lower()):
+    def fetch_content(item: dict[str, Any]) -> tuple[str, str, bool]:
         path = item["path"]
         size = int(item.get("size") or 0)
-        content = ""
-        content_scanned = False
+        if not (_content_is_scannable(path) and size <= max_content_bytes):
+            return path, "", False
 
-        if _content_is_scannable(path) and size <= max_content_bytes:
-            encoded_path = "/".join(quote(part, safe="") for part in path.split("/"))
-            raw_url = (
-                "https://raw.githubusercontent.com/"
-                f"{quote(owner)}/{quote(repo)}/{quote(chosen_ref, safe='')}/{encoded_path}"
-            )
-            try:
-                content = _request_text(raw_url, token)
-                content_scanned = True
-            except Exception:
-                content = ""
+        encoded_path = "/".join(quote(part, safe="") for part in path.split("/"))
+        raw_url = (
+            "https://raw.githubusercontent.com/"
+            f"{quote(owner)}/{quote(repo)}/{quote(chosen_ref, safe='')}/{encoded_path}"
+        )
+        try:
+            return path, _request_text(raw_url, token), True
+        except Exception:
+            return path, "", False
 
-        result = analyze_file(path, content)
+    content_by_path: dict[str, tuple[str, bool]] = {
+        item["path"]: ("", False) for item in sorted_files
+    }
+    scannable = [
+        item
+        for item in sorted_files
+        if _content_is_scannable(item["path"])
+        and int(item.get("size") or 0) <= max_content_bytes
+    ]
+
+    with ThreadPoolExecutor(max_workers=MAX_CONTENT_WORKERS) as executor:
+        futures = [executor.submit(fetch_content, item) for item in scannable]
+        for future in as_completed(futures):
+            path, file_content, content_scanned = future.result()
+            content_by_path[path] = (file_content, content_scanned)
+
+    output_files: list[dict[str, Any]] = []
+    for item in sorted_files:
+        path = item["path"]
+        size = int(item.get("size") or 0)
+        file_content, content_scanned = content_by_path[path]
+
+        result = analyze_file(path, file_content)
         result.update(
             {
                 "size_bytes": size,
