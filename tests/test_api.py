@@ -28,7 +28,33 @@ def test_analyze_endpoint_function_forwards_repository(monkeypatch):
 
     result = api.analyze(request)
 
-    assert result == {"files": []}
+    assert result["files"] == []
+    assert result["cache"]["hit"] is False
+    assert result["cache"]["persistent"] is False
     assert captured["repo_url"] == "https://github.com/example/repo"
     assert captured["ref"] == "main"
     assert captured["max_content_bytes"] == 1234
+
+
+def test_demo_cache_is_persistent(tmp_path, monkeypatch):
+    monkeypatch.setattr(api, "CACHE_DIR", tmp_path)
+    calls = {"count": 0}
+
+    def fake_analyze(repo_url, *, token=None, ref=None, max_content_bytes=None):
+        calls["count"] += 1
+        return {
+            "repository": {"full_name": "dgarijo/Widoco", "ref": "master"},
+            "files": [],
+        }
+
+    monkeypatch.setattr(api, "analyze_github_repository", fake_analyze)
+    request = api.AnalyzeRequest(repo_url="https://github.com/dgarijo/Widoco")
+
+    first = api.analyze(request)
+    second = api.analyze(request)
+
+    assert calls["count"] == 1
+    assert first["cache"]["hit"] is False
+    assert first["cache"]["persistent"] is True
+    assert second["cache"]["hit"] is True
+    assert second["cache"]["persistent"] is True
