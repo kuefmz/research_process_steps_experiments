@@ -268,7 +268,12 @@
 
       analyzeButton.disabled = true;
       status.className = "status";
-      status.textContent = "Analyzing repository…";
+      const startedAt = Date.now();
+      status.textContent = "Analyzing repository… 0s";
+      const timer = setInterval(() => {
+        const seconds = Math.floor((Date.now() - startedAt) / 1000);
+        status.textContent = `Analyzing repository… ${seconds}s`;
+      }, 1000);
       results.classList.add("hidden");
 
       try {
@@ -291,6 +296,7 @@
         status.className = "status error";
         status.textContent = error.message;
       } finally {
+        clearInterval(timer);
         analyzeButton.disabled = false;
       }
     }
