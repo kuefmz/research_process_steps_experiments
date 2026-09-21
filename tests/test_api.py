@@ -1,3 +1,5 @@
+import json
+
 from research_process_steps import api
 
 
@@ -5,57 +7,98 @@ def test_health_reports_no_ai():
     result = api.health()
     assert result["status"] == "ok"
     assert result["uses_ai"] is False
+    assert 100 in result["allowed_batch_sizes"]
 
 
-def test_analyze_endpoint_function_forwards_repository(monkeypatch):
+def test_analyze_uses_execute_once(monkeypatch):
     captured = {}
 
-    def fake_analyze(repo_url, *, token=None, ref=None, max_content_bytes=None):
+    monkeypatch.setattr(api, "load_result", lambda repo_url: None)
+    monkeypatch.setattr(api, "_bundled_demo_path", lambda request: None)
+    monkeypatch.setattr(api, "_demo_cache_path", lambda request: None)
+
+    def fake_execute(repo_url, *, token=None, max_content_bytes=None):
         captured.update(
             repo_url=repo_url,
             token=token,
-            ref=ref,
             max_content_bytes=max_content_bytes,
         )
-        return {"files": []}
+        return (
+            {
+                "repository": {
+                    "url": repo_url,
+                    "full_name": "example/repo",
+                    "ref": "main",
+                    "file_count": 0,
+                },
+                "summary": {"files_per_step": {}, "unclassified_files": 0},
+                "files": [],
+                "cache": {"hit": False, "persistent": True},
+            },
+            True,
+        )
 
-    monkeypatch.setattr(api, "analyze_github_repository", fake_analyze)
+    monkeypatch.setattr(api, "execute_repository_once", fake_execute)
     request = api.AnalyzeRequest(
         repo_url="https://github.com/example/repo",
-        ref="main",
         max_content_bytes=1234,
     )
 
     result = api.analyze(request)
 
     assert result["files"] == []
-    assert result["cache"]["hit"] is False
-    assert result["cache"]["persistent"] is False
+    assert result["cache"]["persistent"] is True
     assert captured["repo_url"] == "https://github.com/example/repo"
-    assert captured["ref"] == "main"
     assert captured["max_content_bytes"] == 1234
 
 
-def test_demo_cache_is_persistent(tmp_path, monkeypatch):
-    monkeypatch.setattr(api, "CACHE_DIR", tmp_path / "runtime")
-    monkeypatch.setattr(api, "BUNDLED_CACHE_DIR", tmp_path / "bundled")
-    calls = {"count": 0}
+def test_analyze_returns_existing_without_execution(monkeypatch):
+    stored = {
+        "repository": {
+            "url": "https://github.com/example/repo",
+            "full_name": "example/repo",
+            "ref": "main",
+            "file_count": 1,
+        },
+        "summary": {"files_per_step": {}, "unclassified_files": 1},
+        "files": [{"path": "README.md"}],
+        "cache": {"hit": True, "persistent": True},
+    }
+    monkeypatch.setattr(api, "load_result", lambda repo_url: stored)
 
-    def fake_analyze(repo_url, *, token=None, ref=None, max_content_bytes=None):
-        calls["count"] += 1
-        return {
-            "repository": {"full_name": "dgarijo/Widoco", "ref": "master"},
-            "files": [],
-        }
+    def fail_execute(*args, **kwargs):
+        raise AssertionError("already stored repository must never execute again")
 
-    monkeypatch.setattr(api, "analyze_github_repository", fake_analyze)
+    monkeypatch.setattr(api, "execute_repository_once", fail_execute)
+
+    result = api.analyze(api.AnalyzeRequest(repo_url="https://github.com/example/repo"))
+    assert result is stored
+    assert result["cache"]["hit"] is True
+
+
+def test_bundled_demo_is_promoted_to_general_store(tmp_path, monkeypatch):
+    results_dir = tmp_path / "results"
+    bundled_dir = tmp_path / "bundled"
+    bundled_dir.mkdir()
+    monkeypatch.setenv("RPS_RESULTS_DIR", str(results_dir))
+    monkeypatch.setattr(api, "BUNDLED_CACHE_DIR", bundled_dir)
+
+    payload = {
+        "repository": {
+            "url": "https://github.com/dgarijo/Widoco",
+            "full_name": "dgarijo/Widoco",
+            "ref": "master",
+            "file_count": 0,
+        },
+        "summary": {"files_per_step": {}, "unclassified_files": 0},
+        "files": [],
+    }
+    (bundled_dir / "widoco.json").write_text(json.dumps(payload), encoding="utf-8")
+
     request = api.AnalyzeRequest(repo_url="https://github.com/dgarijo/Widoco")
-
     first = api.analyze(request)
     second = api.analyze(request)
 
-    assert calls["count"] == 1
-    assert first["cache"]["hit"] is False
     assert first["cache"]["persistent"] is True
     assert second["cache"]["hit"] is True
-    assert second["cache"]["persistent"] is True
+    assert first["execution"]["id"] == second["execution"]["id"]
